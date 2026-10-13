@@ -8,14 +8,20 @@ def test_list_tasks_query_count_is_constant(client, db_session):
 
     statements = []
     engine = db_session.get_bind()
-    listener = lambda *args: statements.append(args[2])  # noqa: E731
-    event.listen(engine, "before_cursor_execute", listener)
+
+    def count_selects(conn, cursor, statement, *args):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count_selects)
     try:
         res = client.get("/tasks")
     finally:
-        event.remove(engine, "before_cursor_execute", listener)
+        event.remove(engine, "before_cursor_execute", count_selects)
 
     assert res.status_code == 200
-    assert all(t["tags"] for t in res.json())
+    tasks = res.json()
+    assert len(tasks) == 5
+    assert all(t["tags"] for t in tasks)
     # 할 일 조회 1회 + 태그 일괄 조회 1회
     assert len(statements) == 2, statements
